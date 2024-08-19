@@ -1,0 +1,171 @@
+/**Market Cap Contribution of Top 3 Companies per Country**/
+
+WITH ranked_companies AS (
+    SELECT 
+        Country, 
+        Company, 
+        CAST(REPLACE(REPLACE(REPLACE("Market Cap", '$', ''), 'T', '') AS NUMERIC) * 1000 AS market_cap_trillions),
+        ROW_NUMBER() OVER (PARTITION BY Country ORDER BY 
+            CAST(REPLACE(REPLACE(REPLACE("Market Cap", '$', ''), 'T', '') AS NUMERIC) DESC) AS rank
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%T%'
+)
+SELECT 
+    Country, 
+    SUM(market_cap_trillions) AS top_3_total_market_cap_trillions
+FROM 
+    ranked_companies
+WHERE 
+    rank <= 3
+GROUP BY 
+    Country
+ORDER BY 
+    top_3_total_market_cap_trillions DESC;
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------
+/** Industry Dominance by Country**/
+WITH country_industry_market_cap AS (
+    SELECT 
+        Country, 
+        Industry,
+        SUM(CAST(REPLACE(REPLACE("Market Cap", '$', ''), 'B', '') AS NUMERIC)) AS total_market_cap_billions
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%B%'
+    GROUP BY 
+        Country, Industry
+)
+SELECT 
+    Country, 
+    Industry, 
+    total_market_cap_billions
+FROM 
+    country_industry_market_cap c
+WHERE 
+    total_market_cap_billions = (
+        SELECT MAX(total_market_cap_billions)
+        FROM country_industry_market_cap
+        WHERE Country = c.Country
+    )
+ORDER BY 
+    Country, total_market_cap_billions DESC;
+
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+/**Top 5 Countries by Market Cap Concentration in a Single Company**/
+WITH country_top_company AS (
+    SELECT 
+        Country, 
+        Company, 
+        MAX(CAST(REPLACE(REPLACE("Market Cap", '$', ''), 'T', '') AS NUMERIC) * 1000) AS max_market_cap_trillions
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%T%'
+    GROUP BY 
+        Country, Company
+), 
+total_country_market_cap AS (
+    SELECT 
+        Country, 
+        SUM(CAST(REPLACE(REPLACE("Market Cap", '$', ''), 'T', '') AS NUMERIC) * 1000) AS total_market_cap_trillions
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%T%'
+    GROUP BY 
+        Country
+)
+SELECT 
+    c.Country, 
+    c.Company, 
+    (c.max_market_cap_trillions / t.total_market_cap_trillions) * 100 AS concentration_percentage
+FROM 
+    country_top_company c
+JOIN 
+    total_country_market_cap t
+ON 
+    c.Country = t.Country
+ORDER BY 
+    concentration_percentage DESC
+LIMIT 5;
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------------
+/** Sectors with a higher potential for market cap growth**/
+WITH sector_averages AS (
+    SELECT 
+        Sector, 
+        AVG(CAST(REPLACE(REPLACE("Market Cap", '$', ''), 'B', '') AS NUMERIC)) AS avg_sector_market_cap_billions
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%B%'
+    GROUP BY 
+        Sector
+)
+SELECT 
+    Company, 
+    t.Sector, 
+    CAST(REPLACE(REPLACE(t."Market Cap", '$', ''), 'B', '') AS NUMERIC) AS market_cap_billions, 
+    s.avg_sector_market_cap_billions,
+    CASE 
+        WHEN CAST(REPLACE(REPLACE(t."Market Cap", '$', ''), 'B', '') AS NUMERIC) < s.avg_sector_market_cap_billions 
+        THEN 'Under-performing'
+        ELSE 'Over-performing'
+    END AS performance_status
+FROM 
+    tech_companies t
+JOIN 
+    sector_averages s
+ON 
+    t.Sector = s.Sector
+WHERE 
+    "Market Cap" LIKE '%B%'
+ORDER BY 
+    performance_status DESC, market_cap_billions DESC;
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+/**Impact of the Top 10 Companies on Global Technology Market Cap**/
+WITH top_10_companies AS (
+    SELECT 
+        Company, 
+        CAST(REPLACE(REPLACE("Market Cap", '$', ''), 'T', '') AS NUMERIC) * 1000 AS market_cap_trillions
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%T%'
+    ORDER BY 
+        market_cap_trillions DESC
+    LIMIT 10
+),
+global_market_cap AS (
+    SELECT 
+        SUM(CAST(REPLACE(REPLACE("Market Cap", '$', ''), 'T', '') AS NUMERIC) * 1000) AS global_market_cap_trillions
+    FROM 
+        tech_companies
+    WHERE 
+        "Market Cap" LIKE '%T%'
+)
+SELECT 
+    (SUM(market_cap_trillions) / (SELECT global_market_cap_trillions FROM global_market_cap)) * 100 AS top_10_impact_percentage
+FROM 
+    top_10_companies;
+
+
